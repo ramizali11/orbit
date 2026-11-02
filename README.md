@@ -27,9 +27,8 @@ Navigate directly to any section of this README.
 | 05 | [Platform Support](#️-platform-support) |
 | 06 | [Technology Stack](#️-technology-stack) |
 | 07 | [Project Architecture](#️-project-architecture) |
-| 08 | [Getting Started](#-getting-started) |
-| 09 | [Contributing](#-contributing) |
-| 10 | [Feedback & Contact](#-feedback--contact) |
+| 08 | [Contributing](#-contributing) |
+| 09 | [Feedback & Contact](#-feedback--contact) |
 
 ---
 
@@ -140,20 +139,6 @@ The general architecture consists of:
 5. **Action Execution** – Perform the requested operation.
 6. **User Interface** – Allow users to configure and manage controls.
 
-This approach helps keep the project extensible as additional devices and platforms are explored.
-
-
-### Android Development
-
-Open the `android` directory in Android Studio and allow Gradle to synchronize the project.
-
-To build a debug APK:
-
-```powershell
-cd android
-.\gradlew.bat assembleDebug
-```
-
 ## 🤝 Contributing
 
 Orbit is an evolving open-source project, and contributions are welcome.
@@ -201,6 +186,7 @@ Have an idea that could make Orbit more useful? Open a feature request and descr
 
 - **GitHub Issues:** [Report bugs or request features](https://github.com/YOUR_USERNAME/orbit/issues)
 - **GitHub Repository:** [Explore the source code](https://github.com/YOUR_USERNAME/orbit)
+- **Any problem:** Email: ramizsaiyed202@gmail.com
 
 Contributions, suggestions, testing, and constructive feedback are always welcome.
 
