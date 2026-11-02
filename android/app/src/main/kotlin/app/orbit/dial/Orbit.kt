@@ -1,8 +1,15 @@
 package app.orbit.dial
 
 import android.content.Context
+import app.orbit.dial.bluetooth.BluetoothDiscoveryManager
+import app.orbit.dial.bluetooth.DeviceFingerprint
+import app.orbit.dial.bluetooth.DeviceRegistry
+import app.orbit.dial.bluetooth.EndpointManager
+import app.orbit.dial.bluetooth.ProtocolType
+import app.orbit.dial.bluetooth.VerificationStatus
 import app.orbit.dial.core.Clock
 import app.orbit.dial.core.DialEvent
+import app.orbit.dial.core.LiveInputMonitor
 import app.orbit.dial.core.RotationControl
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +23,7 @@ import java.util.Locale
  *  - every dial event (media service, hold trampoline, test buttons) -> [events]
  *  - the accessibility service owns the Engine and collects [events]
  *  - the media service owns the VolumeDial and plugs it in as [rotation]
+ *  - Bluetooth discovery and separate endpoint tracking
  */
 object Orbit {
     private val _events = MutableSharedFlow<DialEvent>(extraBufferCapacity = 64)
@@ -26,11 +34,41 @@ object Orbit {
 
     fun emit(ev: DialEvent) {
         log("in  ${ev.action ?: ev.kind}${if (ev.delta != 0) " ${ev.delta}" else ""} <${ev.source}>")
+        LiveInputMonitor.onRawEvent(ev)
         _events.tryEmit(ev)
     }
 
     @Volatile var a11y: OrbitAccessibilityService? = null
     @Volatile var media: OrbitMediaService? = null
+
+    // Bluetooth discovery & endpoint subsystems
+    @Volatile var discoveryManager: BluetoothDiscoveryManager? = null
+    @Volatile var endpointManager: EndpointManager? = null
+
+    fun initBluetooth(ctx: Context) {
+        if (discoveryManager == null) {
+            discoveryManager = BluetoothDiscoveryManager(ctx.applicationContext)
+        }
+        if (endpointManager == null) {
+            endpointManager = EndpointManager(ctx.applicationContext).apply {
+                start()
+                val registry = DeviceRegistry.getInstance(ctx)
+                val active = registry.getActiveDevice()
+                if (active != null) {
+                    bindDevice(active)
+                } else {
+                    val defaultCmf = DeviceFingerprint(
+                        deviceId = "cmf_buds_pro_2_default",
+                        name = "CMF Buds Pro 2",
+                        protocol = ProtocolType.CMF_AVRCP,
+                        verifiedStatus = VerificationStatus.VERIFIED
+                    )
+                    registry.registerDevice(defaultCmf)
+                    bindDevice(defaultCmf)
+                }
+            }
+        }
+    }
 
     /** Engine-facing rotation control; remembers the request until the media service attaches. */
     val rotation = RotationProxy()

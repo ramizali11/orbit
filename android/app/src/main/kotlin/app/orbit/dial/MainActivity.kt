@@ -21,13 +21,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.orbit.dial.bluetooth.EndpointConnectionState
 import app.orbit.dial.core.DialEvent
 import app.orbit.dial.core.Kind
 
@@ -74,11 +74,12 @@ val OrbitColors = darkColorScheme(
 /** The app: Orbit's switch, setup (collapsed when done), the wheel and gestures, help. */
 class MainActivity : ComponentActivity() {
     private var refresh by mutableIntStateOf(0)
-    /** null = home, "controls", or "onboarding" (again, from Help) */
+    /** null = home, "controls", "devices", "diagnostics", or "onboarding" */
     private var screen by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Orbit.initBluetooth(this)
         applyDebugExtras(intent)
         setContent {
             MaterialTheme(colorScheme = OrbitColors) {
@@ -91,6 +92,8 @@ class MainActivity : ComponentActivity() {
                     screen == "controls" -> ControlsScreen(a11yOn(), onSetUpA11y = {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     }) { screen = null; refresh++ }
+                    screen == "devices" -> DeviceManagerScreen { screen = null; refresh++ }
+                    screen == "diagnostics" -> LiveInputTestingScreen { screen = null; refresh++ }
                     else -> Home(refresh)
                 }
             }
@@ -98,7 +101,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); applyDebugExtras(intent) }
-    override fun onResume() { super.onResume(); refresh++ ; if (a11yOn()) OrbitMediaService.start(this) }   // start() is a no-op when Orbit is off
+    override fun onResume() {
+        super.onResume()
+        refresh++
+        Orbit.endpointManager?.updateConnectionStates()
+        if (a11yOn()) OrbitMediaService.start(this)
+    }
 
     /** adb shell am start -n app.orbit.dial/.MainActivity --ez require_bt false  (emulator testing) */
     private fun applyDebugExtras(i: Intent) {
@@ -131,7 +139,7 @@ class MainActivity : ComponentActivity() {
         android.widget.Toast.makeText(this, "Log copied: paste it into your GitHub issue", android.widget.Toast.LENGTH_LONG).show()
     }
 
-    /** Home = Orbit's switch, setup (collapsed once done) and the whole Customize content. */
+    /** Home = Orbit's switch, Bluetooth endpoints card, setup, controls, and help. */
     @Composable
     private fun Home(@Suppress("UNUSED_PARAMETER") tick: Int) {
         var disclosure by remember { mutableStateOf(false) }
@@ -140,10 +148,23 @@ class MainActivity : ComponentActivity() {
             title = "Orbit",
             top = {
                 item { OnOffCard() }
+                item { BluetoothEndpointsCard() }
                 item { SetupCard { disclosure = true } }
                 controlsSection(refresh, onOpen = { screen = "controls" })
             },
             bottom = {
+                item { Section("Diagnostics & Devices", "Manage devices and inspect live dial signals.") }
+                item {
+                    Group {
+                        HelpRow(R.drawable.ic_settings, "Device Manager", "Discover and pair Bluetooth rotary dial devices") {
+                            screen = "devices"
+                        }
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HelpRow(R.drawable.ic_rotate_ccw, "Test Dial Input", "Spin your physical dial and watch real-time signals") {
+                            screen = "diagnostics"
+                        }
+                    }
+                }
                 item { Section("Help", "Something not working? These usually sort it out.") }
                 item {
                     Group {
@@ -156,7 +177,7 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/harsha20599/orbit/issues/new/choose")))
                         }
                     }
-                    Text("Orbit ${BuildConfig.VERSION_NAME} · free · by Yemcube (@yem.cube)", style = MaterialTheme.typography.bodySmall,
+                    Text("Orbit ${BuildConfig.VERSION_NAME} · Universal Rotary Dial Controller", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
@@ -171,6 +192,104 @@ class MainActivity : ComponentActivity() {
             confirmButton = { Button({ disclosure = false; startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("I agree, continue") } },
             dismissButton = { TextButton({ disclosure = false }) { Text("Not now") } },
         )
+    }
+
+    /** Dual Endpoint Status Card: Earbuds and Charging Case Dial */
+    @Composable
+    private fun BluetoothEndpointsCard() {
+        val session by (Orbit.endpointManager?.session?.collectAsState() ?: remember { mutableStateOf(null) })
+
+        val deviceName = session?.deviceFingerprint?.displayName ?: "CMF Buds Pro 2"
+        val budsState = session?.earbudsEndpoint?.state ?: EndpointConnectionState.DISCONNECTED
+        val caseState = session?.caseEndpoint?.state ?: EndpointConnectionState.NOT_INDEPENDENTLY_ACCESSIBLE
+
+        val budsConnected = budsState == EndpointConnectionState.CONNECTED
+        val caseAccessible = caseState == EndpointConnectionState.CONNECTED || caseState == EndpointConnectionState.BRIDGED
+
+        androidx.compose.material3.Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            deviceName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            session?.statusSummary ?: "Earbuds & Dial Controller",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = { screen = "devices" }) {
+                        Text("Manage", fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Endpoint 1: Earbuds
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(10.dp).background(
+                                if (budsConnected) Color(0xFF3DDC97) else Color(0xFFFF5252),
+                                CircleShape
+                            )
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Earbuds Endpoint", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text(
+                        if (budsConnected) "Connected" else "Disconnected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (budsConnected) Color(0xFF3DDC97) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Endpoint 2: Case Dial
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(10.dp).background(
+                                if (caseAccessible) Color(0xFF3DDC97) else Color(0xFFF2B46B),
+                                CircleShape
+                            )
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Charging Case Dial", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text(
+                        when (caseState) {
+                            EndpointConnectionState.CONNECTED -> "Direct Active"
+                            EndpointConnectionState.BRIDGED -> "Active (Bridged)"
+                            EndpointConnectionState.NOT_INDEPENDENTLY_ACCESSIBLE -> "Requires Earbuds"
+                            else -> "Disconnected"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (caseAccessible) Color(0xFF3DDC97) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 
     /** What these controls need: earbud presses need notification access (play / pause your
@@ -297,5 +416,4 @@ class MainActivity : ComponentActivity() {
             dismissButton = { if (!seen) TextButton(onDismiss) { Text("Close") } },
         )
     }
-
 }

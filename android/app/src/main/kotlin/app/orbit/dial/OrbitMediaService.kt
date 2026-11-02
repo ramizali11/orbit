@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -72,6 +73,19 @@ class OrbitMediaService : Service() {
         }
     }
 
+    // Battery saver: suspend silence playback when the screen is turned off
+    private var screenRx: BroadcastReceiver? = null
+
+    // Audio device changes: inform endpoint manager immediately
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            Orbit.endpointManager?.updateConnectionStates()
+        }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            Orbit.endpointManager?.updateConnectionStates()
+        }
+    }
+
     private fun onIndex(idx: Int) {
         val max = am.getStreamMaxVolume(stream).coerceAtLeast(1)
         if (idx < 0 || idx > max) return                    // impossible reading: never a click
@@ -111,6 +125,30 @@ class OrbitMediaService : Service() {
         ContextCompat.registerReceiver(this, volumeRx, IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
             ContextCompat.RECEIVER_NOT_EXPORTED)
         am.registerAudioPlaybackCallback(playbackCb, main)
+        am.registerAudioDeviceCallback(audioDeviceCallback, main)
+
+        // Screen listener for battery conservation
+        screenRx = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                when (i.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        silence?.pause()
+                        Orbit.log("Screen off: paused silence track to save battery")
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        silence?.play()
+                        reassert()
+                        Orbit.log("Screen on: resumed silence track")
+                    }
+                }
+            }
+        }.also {
+            registerReceiver(it, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            })
+        }
+
         main.post(ticker)
         Orbit.log("media service up (volume ${am.getStreamVolume(stream)}/${am.getStreamMaxVolume(stream)})")
     }
@@ -121,7 +159,9 @@ class OrbitMediaService : Service() {
         main.removeCallbacks(ticker)
         dial.setDuck(null); dial.tick()
         runCatching { unregisterReceiver(volumeRx) }
+        screenRx?.let { runCatching { unregisterReceiver(it) } }
         am.unregisterAudioPlaybackCallback(playbackCb)
+        am.unregisterAudioDeviceCallback(audioDeviceCallback)
         silence?.release()
         session.release()
         if (Orbit.media === this) Orbit.media = null
