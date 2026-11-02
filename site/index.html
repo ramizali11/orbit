@@ -19,7 +19,7 @@
     --max: 1080px;
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+  html { -webkit-text-size-adjust: 100%; overflow-x: clip; overflow-y: auto; scroll-behavior: smooth; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.6 "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
   ::selection { background: var(--accent); color: var(--accent-ink); }
   a { color: var(--accent); text-underline-offset: 3px; }
@@ -49,20 +49,20 @@
 
   /* ---- the wheel: the selected item is a light source */
   .stage { position: relative; aspect-ratio: 1; max-width: 460px; justify-self: center; width: 100%; }
-  .disc { position: absolute; inset: 9%; border-radius: 50%; background: #090A0E; box-shadow: 0 30px 60px -20px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.06); overflow: hidden; }
-  .light { position: absolute; inset: 0; transform: rotate(var(--sel, 0deg)); transition: transform .7s cubic-bezier(.3,1.35,.5,1); }
+  .disc { position: absolute; inset: 9%; border-radius: 50%; background: #090A0E; box-shadow: 0 30px 60px -20px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.06); overflow: hidden; pointer-events: none; }
+  .light { position: absolute; inset: 0; transform: rotate(var(--sel, 0deg)); transition: transform .7s cubic-bezier(.3,1.35,.5,1); pointer-events: none; }
   .light::before { content: ""; position: absolute; left: 50%; top: 16%; width: 120%; height: 120%; transform: translate(-50%, -50%);
     background: radial-gradient(circle at 50% 50%, rgba(124,156,255,.42), rgba(124,156,255,.20) 10%, rgba(124,156,255,.08) 24%, rgba(124,156,255,.02) 38%, transparent 55%); }
-  .spill { position: absolute; inset: 2%; border-radius: 50%; transform: rotate(var(--sel, 0deg)); transition: transform .7s cubic-bezier(.3,1.35,.5,1);
+  .spill { position: absolute; inset: 2%; border-radius: 50%; transform: rotate(var(--sel, 0deg)); transition: transform .7s cubic-bezier(.3,1.35,.5,1); pointer-events: none;
     background: conic-gradient(from -40deg, rgba(124,156,255,.0), rgba(124,156,255,.35) 40deg, rgba(124,156,255,0) 80deg, transparent 360deg);
     -webkit-mask: radial-gradient(circle, transparent 63%, #000 64%, #000 69%, transparent 74%); mask: radial-gradient(circle, transparent 63%, #000 64%, #000 69%, transparent 74%); filter: blur(6px); }
   .items { position: absolute; inset: 9%; }
-  .items span { position: absolute; width: 30px; height: 30px; margin: -15px; display: grid; place-items: center; color: rgba(255,255,255,.5);
+  .items span { position: absolute; width: 30px; height: 30px; margin: -15px; display: grid; place-items: center; color: rgba(255,255,255,.5); cursor: pointer;
     left: calc(50% + 34% * sin(var(--a))); top: calc(50% - 34% * cos(var(--a))); }
   .items span { transition: color .4s ease, transform .4s ease; }
   .items span.on { color: #fff; transform: scale(1.15); }
   .items svg { width: 22px; height: 22px; }
-  .centre { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+  .centre { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; pointer-events: none; }
   .centre b { display: block; font-size: 22px; letter-spacing: -0.01em; }
   .centre small { color: var(--ink3); font-size: 13px; }
   @media (prefers-reduced-motion: reduce) { .light, .spill, .items span { transition: none; } }
@@ -217,6 +217,16 @@
       name.textContent = items[i].dataset.n;
     }
     show();
+    items.forEach(function (el, k) {
+      el.addEventListener("click", function () { i = k; show(); });
+    });
+    stage.addEventListener("wheel", function (e) {
+      if (Math.abs(e.deltaY) > 20) {
+        if (e.deltaY > 0) { i = (i + 1) % items.length; if (i === 0) turns++; }
+        else { i = (i - 1 + items.length) % items.length; if (i === items.length - 1) turns--; }
+        show();
+      }
+    }, { passive: true });
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setInterval(function () { i = (i + 1) % items.length; if (i === 0) turns++; show(); }, 1600);
     }

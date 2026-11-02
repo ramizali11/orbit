@@ -110,7 +110,12 @@ class KeyTracker:
         name = VK_NAMES.get(vk)
         if name is None:
             return False
-        swallowed = self._button(vk, key_input(name, self.held), down)
+        inp = key_input(name, self.held)
+        if self.held and not self.wants(inp) and name in ("volumeup", "volumedown"):
+            plain = key_input(name, ())
+            if self.wants(plain):
+                inp = plain
+        swallowed = self._button(vk, inp, down)
         if swallowed and down and self.held & {"win", "alt"}:
             self.mask()
         return swallowed

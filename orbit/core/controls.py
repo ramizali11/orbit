@@ -93,6 +93,16 @@ _TOUCHPAD = {
     "swipe-left": "Swipe left", "swipe-right": "Swipe right", "swipe-up": "Swipe up", "swipe-down": "Swipe down",
 }
 
+# Cross-platform dial and volume key trigger aliases:
+# Windows maps physical dial rotation to virtual volume keys (VK_VOLUME_UP/DOWN),
+# while Android and macOS deliver them as audio volume stream changes (vol:up/down).
+_DIAL_KEY_ALIASES: dict[str, str] = {
+    "vol:up": "key:volumeup",
+    "vol:down": "key:volumedown",
+    "key:volumeup": "vol:up",
+    "key:volumedown": "vol:down",
+}
+
 
 def input_label(inp: str) -> str:
     if inp.startswith("key:"):
@@ -201,7 +211,14 @@ class Controls:
         return [b.trigger for b in self.bindings if b.action == action]
 
     def action_for(self, t: Trigger) -> str | None:
-        return next((b.action for b in self.bindings if b.trigger == t), None)
+        act = next((b.action for b in self.bindings if b.trigger == t), None)
+        if act is not None:
+            return act
+        alias_inp = _DIAL_KEY_ALIASES.get(t.input)
+        if alias_inp:
+            alias_t = replace(t, input=alias_inp)
+            return next((b.action for b in self.bindings if b.trigger == alias_t), None)
+        return None
 
     @property
     def actions(self) -> list[str]:
@@ -226,7 +243,12 @@ class Controls:
         """Exact input, or a prefix ending in ':' ("media:")."""
         if inp.endswith(":"):
             return any(b.trigger.input.startswith(inp) for b in self.bindings)
-        return any(b.trigger.input == inp for b in self.bindings)
+        if any(b.trigger.input == inp for b in self.bindings):
+            return True
+        alias = _DIAL_KEY_ALIASES.get(inp)
+        if alias and any(b.trigger.input == alias for b in self.bindings):
+            return True
+        return False
 
     # ---- settings.json
     def to_json(self) -> dict:
@@ -357,7 +379,10 @@ class PressRecognizer:
 
     def down(self, now: float):
         if self._down_at is not None:            # the OS's own key repeat
-            return
+            if self.repeat and (now - self._down_at) >= 0.040:
+                self._down_at = None
+            else:
+                return
         self._down_at, self._hold_fired = now, False
         self._fired_on_down = self._instant
         if self._instant:
@@ -469,13 +494,35 @@ class ControlsHub:
                 self._slots[inp] = PressRecognizer(presses, moves, fire, unused)
                 self._slots[inp].name = inp
 
+            for vol_inp, key_inp in (("vol:up", "key:volumeup"), ("vol:down", "key:volumedown")):
+                if key_inp not in self._slots and c.uses(vol_inp):
+                    act = c.action_for(Trigger(vol_inp, Press.TAP))
+                    if act:
+                        moves = act in (FORWARD, BACK)
+                        def fire_dial(p, key_inp=key_inp):
+                            a = self.controls.action_for(Trigger(key_inp, p))
+                            if a:
+                                self._emit(a, 1, None)
+                        def unused_dial(n, key_inp=key_inp):
+                            if self.replay:
+                                self.replay(key_inp, n)
+                        self._slots[key_inp] = PressRecognizer({Press.TAP}, moves, fire_dial, unused_dial)
+                        self._slots[key_inp].name = key_inp
+
     def has(self, inp: str) -> bool:
         """A control uses this key / button (the platform should swallow it)."""
-        return inp in self._slots
+        if inp in self._slots:
+            return True
+        alias = _DIAL_KEY_ALIASES.get(inp)
+        if alias and alias in self._slots:
+            return True
+        return False
 
     def key(self, inp: str, down: bool) -> bool:
         with self._lock:
             r = self._slots.get(inp)
+            if r is None and inp in _DIAL_KEY_ALIASES:
+                r = self._slots.get(_DIAL_KEY_ALIASES[inp])
             if r is None:
                 return False
             (r.down if down else r.up)(self.clock())
@@ -488,6 +535,9 @@ class ControlsHub:
         """n of an input the device counts itself (earbud gesture, dial turn)."""
         with self._lock:
             a = next((b.action for b in self.controls.bindings if b.trigger.input == inp), None)
+            if a is None and inp in _DIAL_KEY_ALIASES:
+                alias = _DIAL_KEY_ALIASES[inp]
+                a = next((b.action for b in self.controls.bindings if b.trigger.input == alias), None)
         if a is None:
             return False
         self._emit(a, n, source)
@@ -514,7 +564,7 @@ class ControlsHub:
             return min(ws) if ws else None
 
     def volume_is_dial(self) -> bool:
-        return self.controls.uses("vol:")
+        return self.controls.uses("vol:") or self.controls.uses("key:volumeup") or self.controls.uses("key:volumedown")
 
 
 _MEDIA_KEYS = {"playpause": "play_pause", "nexttrack": "next", "prevtrack": "previous"}

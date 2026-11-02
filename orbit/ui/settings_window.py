@@ -11,10 +11,10 @@ import math
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl,
+from PySide6.QtCore import (QEasingCurve, QEvent, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl,
                             QVariantAnimation, Property)
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QKeySequence, QPainter, QPen,
-                           QPixmap, QRadialGradient)
+                           QPixmap, QRadialGradient, QWheelEvent)
 from PySide6.QtWidgets import (QAbstractButton, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
@@ -164,6 +164,13 @@ class WheelPreview(QWidget):
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._anim.valueChanged.connect(self._step)
         self.setMinimumSize(290, 290)
+
+    def wheelEvent(self, event: QWheelEvent):
+        win = self.window()
+        if hasattr(win, "scroll") and win.scroll:
+            win.scroll.wheelEvent(event)
+        else:
+            event.ignore()
 
     def _step(self, v):
         self._t = v
@@ -457,6 +464,8 @@ class _SliderRow(QFrame):
         self.slider.setValue(round(value / step))
         self.slider.setFixedWidth(190)
         self.slider.setCursor(Qt.PointingHandCursor)
+        self.slider.setFocusPolicy(Qt.StrongFocus)
+        self.slider.wheelEvent = lambda event: event.ignore()
         h.addWidget(self.slider)
         self.val = QLabel()
         self.val.setObjectName("meta2")
@@ -527,7 +536,8 @@ class SettingsWindow(QWidget):
         # ---- left: the wheel, live
         left = QFrame()
         left.setObjectName("panel")
-        left.setFixedWidth(320)
+        left.setMinimumWidth(280)
+        left.setMaximumWidth(340)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(28, 30, 28, 24)
         lv.setSpacing(6)
@@ -561,13 +571,14 @@ class SettingsWindow(QWidget):
         right = QVBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll = QScrollArea()
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         body = QWidget()
         body.setObjectName("body")
-        scroll.setWidget(body)
+        self.scroll.setWidget(body)
         v = QVBoxLayout(body)
         v.setContentsMargins(32, 30, 32, 24)
         v.setSpacing(0)
@@ -694,9 +705,13 @@ class SettingsWindow(QWidget):
         self.note.setWordWrap(True)
         v.addWidget(self.note)
         v.addStretch(1)
-        right.addWidget(scroll, 1)
+        right.addWidget(self.scroll, 1)
+        left.wheelEvent = lambda event: self.scroll.wheelEvent(event)
+
 
         bar_frame = QFrame()
+        bar_frame.wheelEvent = lambda event: self._dispatch_wheel(event)
+        self.scroll.wheelEvent = lambda event: self._dispatch_wheel(event)
         bar_frame.setObjectName("bar")
         bar = QHBoxLayout(bar_frame)
         bar.setContentsMargins(32, 14, 32, 16)
@@ -714,6 +729,7 @@ class SettingsWindow(QWidget):
         bar.addWidget(self.save_btn)
         right.addWidget(bar_frame)
         root.addLayout(right, 1)
+        self._install_scroll_filters()
         self.changed()
 
     # ------------------------------------------------------------------ building
@@ -737,6 +753,8 @@ class SettingsWindow(QWidget):
         box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         box.setMinimumContentsLength(16)
         box.setIconSize(QSize(16, 16))
+        box.setFocusPolicy(Qt.StrongFocus)
+        box.wheelEvent = lambda event: event.ignore()
         return box
 
     def _gesture_box(self, g: str, from_config, current) -> QComboBox:
@@ -775,6 +793,7 @@ class SettingsWindow(QWidget):
         for k, t in enumerate(self.order):
             self.items_group.box.insertWidget(k, self.rows[t])
         self.items_group.restyle()
+        self._install_scroll_filters()
         self.changed()
 
     def _add_shortcut_row(self, sc: dict) -> _ShortcutRow:
@@ -796,6 +815,7 @@ class SettingsWindow(QWidget):
         self.items_group.restyle()
         row.label.setFocus()
         row.label.selectAll()
+        self._install_scroll_filters()
         self.changed()
 
     def shortcut_renamed(self, sid: str):
@@ -804,6 +824,7 @@ class SettingsWindow(QWidget):
         if tid in self.tools:
             self.tools[tid].label = name
             self.rows[tid].name.setText(name)
+        self._install_scroll_filters()
         self.changed()
 
     def remove_shortcut(self, sid: str):
@@ -817,6 +838,7 @@ class SettingsWindow(QWidget):
             self.tools.pop(tid, None)
         self.sc_group.restyle()
         self.items_group.restyle()
+        self._install_scroll_filters()
         self.changed()
 
     # ------------------------------------------------------------------ state
@@ -900,6 +922,38 @@ class SettingsWindow(QWidget):
         self.onboarded = True                      # asked once; "Run setup again" is always there
         self.apply_now()
 
+    def _dispatch_wheel(self, event: QWheelEvent):
+        if not hasattr(self, "scroll") or not self.scroll:
+            return
+        sb = self.scroll.verticalScrollBar()
+        p_delta = event.pixelDelta().y() if hasattr(event, "pixelDelta") else 0
+        if p_delta != 0:
+            sb.setValue(sb.value() - p_delta)
+            event.accept()
+        else:
+            sb.event(event)
+
+    def wheelEvent(self, event: QWheelEvent):
+        if hasattr(self, "scroll") and self.scroll:
+            self._dispatch_wheel(event)
+        else:
+            super().wheelEvent(event)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Wheel and hasattr(self, "scroll") and self.scroll:
+            from PySide6.QtWidgets import QScrollBar, QTextEdit
+            if not isinstance(watched, (QScrollBar, QTextEdit)):
+                self._dispatch_wheel(event)
+                return True
+        return super().eventFilter(watched, event)
+
+    def _install_scroll_filters(self):
+        from PySide6.QtWidgets import QScrollBar, QTextEdit
+        self.installEventFilter(self)
+        for child in self.findChildren(QWidget):
+            if not isinstance(child, (QScrollBar, QTextEdit)):
+                child.installEventFilter(self)
+
     def reset(self):
         st.save({}, self.settings_path)
         self.on_save({})
@@ -954,9 +1008,14 @@ class SettingsWindow(QWidget):
         QPushButton#quiet {{ background: transparent; border: none; color: {INK2}; padding: 6px 4px; }}
         QPushButton#quiet:hover {{ color: {INK}; }}
         QFrame#bar {{ background: {CANVAS}; border-top: 1px solid {HAIR}; }}
-        QScrollBar:vertical {{ background: transparent; width: 10px; margin: 4px 2px; }}
-        QScrollBar::handle:vertical {{ background: #2D323D; border-radius: 3px; min-height: 30px; }}
-        QScrollBar::handle:vertical:hover {{ background: #3B4150; }}
-        QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+        QScrollBar:vertical {{ background: #14171E; width: 14px; margin: 0px; border-radius: 6px; }}
+        QScrollBar::handle:vertical {{ background: #2D323D; border-radius: 5px; min-height: 36px; margin: 2px; }}
+        QScrollBar::handle:vertical:hover {{ background: #3E4554; }}
+        QScrollBar::handle:vertical:pressed {{ background: {a}; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; background: none; border: none; }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+
+
+
         QToolTip {{ background: #20242D; color: {INK}; border: 1px solid #2D323D; padding: 4px 8px; }}
         """

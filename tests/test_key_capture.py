@@ -45,6 +45,42 @@ def test_win_knob_volume_keys_are_controls():
     assert [e.delta for e in posted] == [1, 1, -1]
 
 
+def test_win_cmf_dial_volume_keys_are_swallowed_and_emit_rotation():
+    # Presets.CMF binds vol:up and vol:down. On Windows, physical rotary dial rotation arrives
+    # as injected VK_VOLUME_UP (0xAF) / VK_VOLUME_DOWN (0xAE).
+    t, r, posted = tracker(Presets.CMF.controls)
+
+    # Clockwise rotation: swallowed down & up, emits ROTATE delta=+1
+    assert t.keyboard(0xAF, True) is True
+    assert t.keyboard(0xAF, False) is True
+    assert len(posted) == 1
+    assert posted[0].delta == 1
+
+    # Counter-clockwise rotation: swallowed down & up, emits ROTATE delta=-1
+    assert t.keyboard(0xAE, True) is True
+    assert t.keyboard(0xAE, False) is True
+    assert len(posted) == 2
+    assert posted[1].delta == -1
+
+
+def test_win_cmf_dial_with_held_modifiers_still_swallowed():
+    # Holding Shift / Ctrl on PC keyboard while rotating earbuds dial should still swallow dial turns
+    t, r, posted = tracker(Presets.CMF.controls)
+    t.keyboard(0x10, True)  # Shift down
+    assert t.keyboard(0xAF, True) is True
+    assert t.keyboard(0xAF, False) is True
+    t.keyboard(0x10, False) # Shift up
+    assert len(posted) == 1 and posted[0].delta == 1
+
+
+def test_win_cmf_dial_passes_when_paused():
+    t, r, posted = tracker(Presets.CMF.controls)
+    r.paused = True
+    assert t.keyboard(0xAF, True) is False
+    assert t.keyboard(0xAE, True) is False
+    assert len(posted) == 0
+
+
 def test_win_bound_key_is_swallowed_down_and_up():
     t, r, posted = tracker(Presets.F_KEYS.controls)
     assert t.keyboard(0x7C, True) is True                  # F13

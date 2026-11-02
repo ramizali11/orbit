@@ -209,7 +209,15 @@ def main(argv=None):
     live = {"engine": Engine(cfg, out, ui, sources)}
     engine = live["engine"]
     engine.set_volume_dial(router.hub.volume_is_dial())
-    bus.event.connect(lambda ev: live["engine"].handle(ev), Qt.QueuedConnection)
+
+    hub_windows = []
+
+    def on_bus_event(ev):
+        live["engine"].handle(ev)
+        if hub_windows and hub_windows[0].isVisible():
+            hub_windows[0].post_event(ev)
+
+    bus.event.connect(on_bus_event, Qt.QueuedConnection)
 
     services = plat.create_services(cfg)
     for svc in services:
@@ -314,6 +322,37 @@ def main(argv=None):
         w.raise_()
         w.activateWindow()
 
+    def open_hub():
+        if sys.platform != "win32":
+            open_settings()
+            return
+        from orbit.ui.windows_hub import WindowsHubWindow
+        from orbit.core.device_registry import DeviceRegistry
+        from orbit.platform.windows.actions import DialActionProfile, WindowsActionExecutor
+        from orbit.platform.windows.brightness import InternalBrightness
+
+        if hub_windows and hub_windows[0].isVisible():
+            hub_windows[0].raise_()
+            hub_windows[0].activateWindow()
+            return
+
+        reg = DeviceRegistry(data_dir() / "devices.json")
+        prof = DialActionProfile.from_dict(settings_now.get("dial_profile", {}))
+
+        def save_profile(new_prof):
+            settings_now["dial_profile"] = new_prof.to_dict()
+            user_settings.save(settings_now)
+            log.info("dial action profile saved")
+
+        executor = WindowsActionExecutor(out, InternalBrightness())
+        w = WindowsHubWindow(reg, prof, save_profile, executor)
+        hub_windows[:] = [w]
+        w.show()
+        w.raise_()
+        w.activateWindow()
+
+    a_hub = QAction("Orbit Dashboard & Devices…")
+    a_hub.triggered.connect(open_hub)
     a_settings.triggered.connect(open_settings)
     a_restart = QAction("Restart (reload config)")
     a_quit = QAction("Quit")
@@ -352,7 +391,8 @@ def main(argv=None):
     menu.addAction(a_status)
     menu.addAction(a_on)
     menu.addSeparator()
-    for a in (a_settings, a_wheel, a_cfg, a_log, a_restart):
+    menu_actions = [a_hub, a_settings, a_wheel, a_cfg, a_log, a_restart] if sys.platform == "win32" else [a_settings, a_wheel, a_cfg, a_log, a_restart]
+    for a in menu_actions:
         menu.addAction(a)
     menu.addSeparator()
     for a in toggles:
@@ -360,7 +400,7 @@ def main(argv=None):
     menu.addSeparator()
     menu.addAction(a_quit)
     tray.setContextMenu(menu)
-    tray.activated.connect(lambda reason: open_settings() if reason == QSystemTrayIcon.Trigger else None)
+    tray.activated.connect(lambda reason: (open_hub() if sys.platform == "win32" else open_settings()) if reason == QSystemTrayIcon.Trigger else None)
     tray.show()
     a_on.setChecked(not off_flag.exists())
     set_on(not off_flag.exists())

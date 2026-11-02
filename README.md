@@ -348,3 +348,26 @@ app starts) into a **draft** release with the files `Orbit-Windows-Setup.exe`, `
 and `Orbit-Android.apk`; publish it with `gh release edit vX.Y.Z --draft=false --latest`. The
 Android release key is kept outside the repo (CI secrets `ORBIT_KEYSTORE_B64` /
 `ORBIT_KEYSTORE_PASSWORD`). Play Store builds use `ORBIT_APP_ID=com.littyl.orbit`.
+
+
+## Windows 10 & 11 Universal Dial Support
+
+Orbit features a native desktop experience on Windows 10 & 11 for rotary dial earbuds cases and standalone dials:
+
+- **Universal Bluetooth Discovery:** Automatic device discovery across Windows Registry (`BTHPORT\Parameters\Devices`), CoreAudio render endpoints, and Win32 inquiry scanning.
+- **Robust Device Fingerprinting:** Distinguishes multiple devices sharing the same name using a 6-tuple fingerprint (MAC address, COD, vendor/product ID, service UUIDs, connection type).
+- **Dual-Endpoint Architecture:** Treats earbuds (audio/media) and charging-case dials as separate logical endpoints (`INDIRECT_BRIDGED` for CMF Buds Pro 2, `DIRECT_DUAL_RADIO` for Surface Dial / BLE HID).
+- **Extensible Protocol Adapters:**
+  - `CmfAvrcpHfpAdapter`: Genuine CMF Buds Pro 2 with AVRCP 16-step grid and ETW `AT+BVRA` hold sniffer.
+  - `GenericAvrcpAdapter`: Third-party clones and white-label rotary cases.
+  - `BleHidDialAdapter`: Standard BLE HID Consumer Control & Surface Dial reports (`0x1812`).
+  - `BleGattDialAdapter`: Custom microcontroller & vendor GATT rotary encoders.
+  - `UnknownDeviceAdapter`: Safe diagnostic probe mode.
+- **Expanded Action Catalog:** System volume, media transport, vertical/horizontal scrolling, page navigation, app switching (Alt+Tab / Win+Tab), screen brightness (WMI), and custom keyboard shortcuts.
+- **Interactive Live Input Testing Screen:** 16-step animated Canvas dial that turns in real time with the physical dial, tracking detents, velocity, direction, and triggered actions.
+- **System Tray & Background Reliability:** Configurable startup with Windows (`HKCU\...\Run`), sleep/wake resilience, and low CPU usage.
+
+Detailed documentation:
+- [Windows Compatibility Matrix](docs/WINDOWS_COMPATIBILITY.md)
+- [Windows Architecture & Implementation Plan](docs/WINDOWS_IMPLEMENTATION_PLAN.md)
+- [Windows Build & Verification Guide](docs/WINDOWS_BUILD_AND_TEST_GUIDE.md)
