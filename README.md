@@ -142,47 +142,6 @@ The general architecture consists of:
 
 This approach helps keep the project extensible as additional devices and platforms are explored.
 
-## 💻 Getting Started
-
-Want to explore the source code, contribute, or build Orbit yourself?
-
-### Requirements
-
-- Git
-- Python
-- Android Studio
-- Android SDK
-- Compatible JDK
-- Required project dependencies
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/orbit.git
-cd orbit
-```
-
-### Windows Development
-
-Create a virtual environment:
-
-```powershell
-python -m venv .venv
-```
-
-Activate it:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Install dependencies:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Run the desktop application using the project's configured entry point.
 
 ### Android Development
 
