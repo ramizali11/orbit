@@ -38,8 +38,8 @@ Choose your platform and get started.
 
 | Platform | Download | Version |
 |---|---|---|
-| 📱 Android | [Download APK](https://github.com/YOUR_USERNAME/orbit/releases/download/v1.0.0/Orbit-Android.apk) | v1.0.0 |
-| 💻 Windows | [Download Windows ZIP](https://github.com/YOUR_USERNAME/orbit/releases/download/v1.0.1/Orbit-Windows.zip) | v1.0.1 |
+| 📱 Android | [Download APK](In The release, please check the release section) | v1.0.0 |
+| 💻 Windows | [Download Windows ZIP](In The release, please check the release section) | v1.0.0 |
 
 ### Android Installation
 
